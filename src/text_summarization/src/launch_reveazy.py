@@ -1,6 +1,10 @@
 import time
+import os
 import json
 import nltk
+nltk.download('punkt', quiet=True)
+nltk.download('punkt_tab', quiet=True)
+
 import torch
 import argparse
 
@@ -10,8 +14,8 @@ import sys
 sys.path.append("../../")
 
 from utils.data import *
-from transformers import BertTokenizer, BertModel
-from utils.summary import truncate_summary, RougeEvaluator
+from transformers import AutoModel, AutoTokenizer
+# from utils.summary import truncate_summary, RougeEvaluator
 
 from tqdm import tqdm
 from algorithms.coversumm_summarizer import CoverSummOnlineSummarizer
@@ -19,7 +23,6 @@ from algorithms.coversumm_summarizer import CoverSummOnlineSummarizer
 def load_json(filename):
   with open(filename) as file:
     return json.load(file)
-
 
 def load_representations(data, product_id):
   representations = []
@@ -30,9 +33,10 @@ def load_representations(data, product_id):
       continue
     
     batch = tokenizer(sentences,
-                    pad_to_max_length=True,
+                    padding='max_length',
                     truncation=True,
-                    add_special_tokens=True)
+                    add_special_tokens=True, 
+                    max_length=512)
     input_ids = torch.LongTensor(batch['input_ids']).to(device)
     attention_mask = torch.LongTensor(batch['attention_mask']).to(device)
     output = model(input_ids, attention_mask=attention_mask)
@@ -69,11 +73,11 @@ if __name__ == '__main__':
                       type=str,
                       help="Name of Summarizer.")
   parser.add_argument("--model_name",
-                      default="bert-base-uncased",
+                      default="indolem/indobert-base-uncased",
                       type=str,
-                      help="Bert model name.")
+                      help="IndoBERT model name.")
   parser.add_argument("--data_path",
-                      default="../../../data/reveazy/reveazy_reviews.json",
+                      default='../../../data/reveazy/reveazy_reviews.json',
                       type=str,
                       help="Path to dataset.")
 
@@ -81,10 +85,9 @@ if __name__ == '__main__':
 
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-  tokenizer = BertTokenizer.from_pretrained(args.model_name)
-  model = BertModel.from_pretrained(args.model_name)
+  tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+  model = AutoModel.from_pretrained(args.model_name)
   model.to(device)
-
 
   data = load_json(args.data_path)
 
