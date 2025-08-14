@@ -73,9 +73,9 @@ if __name__ == '__main__':
                       type=str,
                       help="Name of Summarizer.")
   parser.add_argument("--model_name",
-                      default="indolem/indobert-base-uncased",
+                      default="fathan/indojave-codemixed-indobert-base",
                       type=str,
-                      help="IndoBERT model name.")
+                      help="BERT model name.")
   parser.add_argument("--data_path",
                       default='../../../data/reveazy/reveazy_reviews.json',
                       type=str,
