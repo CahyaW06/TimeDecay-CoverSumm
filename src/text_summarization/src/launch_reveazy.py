@@ -53,8 +53,8 @@ def get_summarizer(name, dim=100):
 
 
 def online_summary(points, summarizer=CoverSummOnlineSummarizer(dim=100)):
-  for i in range(points.shape[0]):
-    summ = summarizer.update_summary(points[i])
+  for point in points:
+    summ = summarizer.update_summary(point)
   return summ
 
 
@@ -64,6 +64,18 @@ def run_online_summarization(points, summarizer=CoverSummOnlineSummarizer(dim=10
   for i in (range(points.shape[0])):
     summ = summarizer.update_summary(points[i])
   return time.time() - start
+
+def np_encoder(object):
+  if isinstance(object, np.generic):
+    return object.item()
+
+def dump_data(data, path='../../../data/reveazy/output/reveazy_summaries.json'):
+  directory = os.path.dirname(path)
+  if not os.path.exists(directory):
+    os.makedirs(directory)
+    
+  with open(path, 'w') as f:
+    json.dump(data, f, default=np_encoder, indent=4)
 
 
 if __name__ == '__main__':
@@ -93,17 +105,23 @@ if __name__ == '__main__':
 
   total_time = 0
   count = 0
+  summaries = {}
   for product_id in list(data.keys()):
     count += 1
     representations = load_representations(data, product_id)
-
     summarizer = get_summarizer(args.summarizer)
 
-    for review_rep in tqdm(representations):
-      points = review_rep.astype(np.float32)
-      runtime = run_online_summarization(points, summarizer)
-      total_time += runtime
+    points = representations[0].astype(np.float32)
+    
+    start = time()
+    summaries[product_id] = online_summary(points, summarizer)
+    
+    runtime = time() - start
+    total_time += runtime
+
     del representations
     del summarizer
   
+  output_path = '../../../data/reveazy/output/reveazy_summaries.json'
+  dump_data(summaries, output_path)
   print(f"Amortized runtime: {total_time / count}")
