@@ -48,7 +48,7 @@ def load_representations(data, product_id):
 def get_summarizer(name, dim=100):
   summarizer = None
   if name == 'coversumm':
-    summarizer = CoverSummOnlineSummarizer(dim=dim)
+    summarizer = CoverSummOnlineSummarizer()
   return summarizer
 
 
@@ -106,21 +106,21 @@ if __name__ == '__main__':
   total_time = 0
   count = 0
   summaries = {}
+  summarizer = get_summarizer(args.summarizer)
+
   for product_id in list(data.keys()):
     count += 1
     representations = load_representations(data, product_id)
-    summarizer = get_summarizer(args.summarizer)
 
     points = representations[0].astype(np.float32)
     
     start = time()
-    summaries[product_id] = online_summary(points, summarizer)
+    # summaries.append(summarizer.update_summary(points))
+    for point in points:
+      summaries[product_id] = summarizer.update_summary(point)
     
     runtime = time() - start
     total_time += runtime
-
-    del representations
-    del summarizer
   
   output_path = '../../../data/reveazy/output/reveazy_summaries.json'
   dump_data(summaries, output_path)
