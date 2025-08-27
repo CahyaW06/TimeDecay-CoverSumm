@@ -26,6 +26,7 @@ def load_json(filename):
 
 def load_representations(data, product_id):
   representations = []
+  splitted_sentences = []
   
   for review in tqdm(data[product_id]):
     sentences = nltk.sent_tokenize(review['review_body'])
@@ -41,9 +42,11 @@ def load_representations(data, product_id):
     attention_mask = torch.LongTensor(batch['attention_mask']).to(device)
     output = model(input_ids, attention_mask=attention_mask)
     output = output['pooler_output'].detach().cpu().numpy()
+    
     representations.append(output)
-  return representations
-
+    for sentence in sentences:
+      splitted_sentences.append([sentence, review['created_at']])
+  return representations, splitted_sentences
 
 def get_summarizer(name, dim=100):
   summarizer = None
@@ -51,12 +54,10 @@ def get_summarizer(name, dim=100):
     summarizer = CoverSummOnlineSummarizer()
   return summarizer
 
-
 def online_summary(points, summarizer=CoverSummOnlineSummarizer(dim=100)):
   for point in points:
     summ = summarizer.update_summary(point)
   return summ
-
 
 def run_online_summarization(points, summarizer=CoverSummOnlineSummarizer(dim=100)):
   import time # adhoc fix. TODO:find the root cause of this bug
@@ -76,7 +77,6 @@ def dump_data(data, path='../../../data/reveazy/output/reveazy_summaries.json'):
     
   with open(path, 'w') as f:
     json.dump(data, f, default=np_encoder, indent=4)
-
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
@@ -105,23 +105,46 @@ if __name__ == '__main__':
 
   total_time = 0
   count = 0
-  summaries = {}
+
   summarizer = get_summarizer(args.summarizer)
+  
+  text_id = 0
+  t_summary = 1
+  texts = {}
+  summaries = {}
 
   for product_id in list(data.keys()):
     count += 1
-    representations = load_representations(data, product_id)
+    representations, items = load_representations(data, product_id)
+    
+    for sentence, timestamp in items:
+      texts[text_id] = {
+        'text': sentence,
+        'timestamp': timestamp
+      }
+      text_id += 1
 
     points = representations[0].astype(np.float32)
     
     start = time()
-    # summaries.append(summarizer.update_summary(points))
     for point in points:
-      summaries[product_id] = summarizer.update_summary(point)
+      last_summary = summarizer.update_summary(point)
+    
+    full_text_summary = ''
+    for idx in summarizer.get_summary():
+      full_text_summary += texts[idx]['text'] + ' '
+    
+    summaries[t_summary] = full_text_summary
+    t_summary += 1
     
     runtime = time() - start
     total_time += runtime
   
-  output_path = '../../../data/reveazy/output/reveazy_summaries.json'
-  dump_data(summaries, output_path)
+  texts_output_path = '../../../data/reveazy/output/texts.json'
+  dump_data(texts, texts_output_path)
+
+  summaries_output_path = '../../../data/reveazy/output/summaries.json'
+  dump_data(summaries, summaries_output_path)
+
   print(f"Amortized runtime: {total_time / count}")
+  

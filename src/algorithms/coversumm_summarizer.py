@@ -10,7 +10,8 @@ from algorithms.naivesgt_summarizer import SGTreeOnlineSummarizer
 
 
 class CoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
-    def __init__(self, dim=100, min_capacity=100, alpha = 1e-1, summary_length=20):
+    def __init__(self, dim=100, min_capacity=1, alpha = 1e-1, summary_length=5):
+        # TODO: search what min_capacity and alpha used for
         super().__init__(summary_length=summary_length)
         self._current_neighbours = None
         self._current_neighbours_idx = None
@@ -73,9 +74,12 @@ class CoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
             
             if drift >= self._threshold/2 or len(self._current_neighbours_idx) >= self._capacity:
                 delta = self._min_capacity / self._size
+
+                # compute threshold
                 self._threshold = math.sqrt(
                     self._alpha * self._dim * math.log2(2 / delta) / 2 / self._size)
                 
+                # ct.ReservoirSearch
                 self._summary = self._return_knn(self._current_mean)
 
                 radius = self._threshold + self._max_dist
