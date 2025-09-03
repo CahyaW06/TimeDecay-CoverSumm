@@ -1,5 +1,6 @@
 import math
 import time
+from datetime import datetime
 
 import numpy as np
 import graphgrove as gg
@@ -9,8 +10,8 @@ from graphgrove.sgtree import NNS_L2 as SGTree_NNS_L2
 from algorithms.naivesgt_summarizer import SGTreeOnlineSummarizer
 
 
-class CoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
-    def __init__(self, dim=100, min_capacity=100, alpha = 1e-1, summary_length=5):
+class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
+    def __init__(self, dim=100, min_capacity=100, alpha = 1e-1, summary_length=5, decay_rate=0.5, decay_type='exp'):
         # TODO: search what min_capacity and alpha used for
         super().__init__(summary_length=summary_length)
         self._current_neighbours = None
@@ -22,6 +23,24 @@ class CoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
         self._min_capacity = min_capacity
         self._alpha = alpha
         self._last_mean = None
+        self._decay_rate = decay_rate
+        self._decay_type = decay_type
+
+    def _get_decay_weight(self, date):
+        date_diff_in_days = self._get_diff_date(date)
+
+        if self._decay_type == 'power':
+            return math.pow(date_diff_in_days, -self._decay_rate)
+        elif self._decay_type == 'exp':
+            return math.exp(-self._decay_rate * date_diff_in_days)
+        elif self._decay_type == 'linear':
+            return 1 / (1 + (self._decay_rate * date_diff_in_days))
+        return math.exp(-self._decay_rate * date_diff_in_days)
+        
+    def _get_diff_date(self, review_date):
+        current_date = datetime.now()
+        date = datetime.fromisoformat(review_date)
+        return (current_date - date).days
 
     def _return_knn(self, query):
         idx, dist = self._cover_tree.kNearestNeighbours(query.reshape(1, -1),
@@ -43,13 +62,16 @@ class CoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
         neighbour_idx = [self._current_neighbours_idx[o] for o in order]
         return neighbour_idx
 
-    def update_summary(self, input_point):
+    def update_summary(self, input_point, date):
         self._size += 1
+        decay_weight = self._get_decay_weight(date)
 
         if self._size <= self._summary_length + 1:
             self._points.append(input_point)
         
+        # update mean with time decay
         self._update_mean(input_point)
+        self._current_mean = self._current_mean * decay_weight
         
         if self._size <= self._summary_length:
             return self._output_all()

@@ -19,6 +19,7 @@ from transformers import AutoModel, AutoTokenizer
 
 from tqdm import tqdm
 from algorithms.coversumm_summarizer import CoverSummOnlineSummarizer
+from algorithms.time_decay_coversumm_summarizer import TimeDecayCoverSummOnlineSummarizer
 
 def load_json(filename):
   with open(filename) as file:
@@ -26,45 +27,34 @@ def load_json(filename):
 
 def load_representations(data, product_id):
   representations = []
-  splitted_sentences = []
   
   for review in tqdm(data[product_id]):
     sentences = nltk.sent_tokenize(review['review_body'])
     if not sentences:
       continue
-    
+
     batch = tokenizer(sentences,
-                    padding='max_length',
-                    truncation=True,
-                    add_special_tokens=True, 
-                    max_length=512)
-    input_ids = torch.LongTensor(batch['input_ids']).to(device)
-    attention_mask = torch.LongTensor(batch['attention_mask']).to(device)
-    output = model(input_ids, attention_mask=attention_mask)
-    output = output['pooler_output'].detach().cpu().numpy()
+                      padding='max_length',
+                      truncation=True,
+                      add_special_tokens=True, 
+                      max_length=512,
+                      return_tensors='pt')  # lebih rapi
+    batch = {k: v.to(device) for k,v in batch.items()}
+    output = model(**batch)
+    sentence_embeddings = output['pooler_output'].detach().cpu().numpy()
     
-    representations.append(output)
-    for sentence in sentences:
-      splitted_sentences.append([sentence, review['created_at']])
-  return representations, splitted_sentences
+    # representations.append(output)
+    for sentence, emb in zip(sentences, sentence_embeddings):
+      representations.append([sentence, review['created_at'], emb])
+  return representations
 
-def get_summarizer(name, dim=100):
+def get_summarizer(name, method, summary_length=3):
   summarizer = None
-  if name == 'coversumm':
-    summarizer = CoverSummOnlineSummarizer()
+  if method == 'without-decay':
+    summarizer = CoverSummOnlineSummarizer(summary_length=summary_length)
+  else: 
+    summarizer = TimeDecayCoverSummOnlineSummarizer(summary_length=summary_length, decay_type=method)
   return summarizer
-
-def online_summary(points, summarizer=CoverSummOnlineSummarizer(dim=100)):
-  for point in points:
-    summ = summarizer.update_summary(point)
-  return summ
-
-def run_online_summarization(points, summarizer=CoverSummOnlineSummarizer(dim=100)):
-  import time # adhoc fix. TODO:find the root cause of this bug
-  start = time.time()
-  for i in (range(points.shape[0])):
-    summ = summarizer.update_summary(points[i])
-  return time.time() - start
 
 def np_encoder(object):
   if isinstance(object, np.generic):
@@ -103,48 +93,85 @@ if __name__ == '__main__':
 
   data = load_json(args.data_path)
 
-  total_time = 0
-  count = 0
+  # decay method
+  decay_method = ['power', 'exp', 'linear', 'without-decay']
 
-  summarizer = get_summarizer(args.summarizer)
+  # report
+  report = {} 
+
+  for iteration, method in enumerate(decay_method):
+    total_time = 0
+    review_counter = 0
+
+    if method == 'without-decay': args.summarizer = 'coversumm' 
+    else: args.summarizer = 'td_coversumm'
+      
+    summarizer = get_summarizer(args.summarizer, method=method)
+    
+    text_id = 0
+    summary_iteration = 1
+    texts = {}
+    summaries = {}
+
+    for product_id in list(data.keys()):
+      review_counter += 1
+      start = time()
+
+      representations = load_representations(data, product_id)
+      
+      for sentence, timestamp, representation in representations:
+        input_point = representation.astype(np.float32)
+        
+        texts[text_id] = {
+          'text': sentence,
+          'timestamp': timestamp,
+        }
+
+        text_id += 1
+
+        # update summary
+        if (args.summarizer == 'td_coversumm'):
+          last_summary = summarizer.update_summary(input_point, timestamp)
+        else:
+          last_summary = summarizer.update_summary(input_point)
+      
+      # get summary text
+      full_text_summary = ''
+      for idx in summarizer.get_summary():
+        full_text_summary += texts[idx]['text'] + ' '
+      full_text_summary.strip()
+      
+      # save summary per iteration
+      summaries[summary_iteration] = full_text_summary
+      summary_iteration += 1
+      
+      runtime = time() - start
+      total_time += runtime
+    
+    # dump text segmentation
+    texts_output_path = '../../../data/reveazy/output/texts.json'
+    dump_data(texts, texts_output_path)
+
+    # dump summary
+    summaries_output_path = f'../../../outputs/{args.summarizer}/{method}/summaries.json'
+    dump_data(summaries, summaries_output_path)
+
+    print(f"Amortized runtime: {total_time / review_counter}")
+    print(f"Text Summary ID: {summarizer.get_summary()}")
+
+    # save report
+    report[iteration] = {
+      'summarizer': args.summarizer,
+      'decay_method': summarizer._decay_type if hasattr(summarizer, "_decay_type") else method,
+      'decay_rate': summarizer._decay_rate if hasattr(summarizer, "_decay_rate") else None,
+      'amortized_runtime': total_time / review_counter,
+      'summary_id': list(summarizer.get_summary()),
+      'summary_text': full_text_summary,
+    }
+
+    del summarizer
   
-  text_id = 0
-  t_summary = 1
-  texts = {}
-  summaries = {}
-
-  for product_id in list(data.keys()):
-    count += 1
-    representations, items = load_representations(data, product_id)
-    
-    for sentence, timestamp in items:
-      texts[text_id] = {
-        'text': sentence,
-        'timestamp': timestamp
-      }
-      text_id += 1
-
-    points = representations[0].astype(np.float32)
-    
-    start = time()
-    for point in points:
-      last_summary = summarizer.update_summary(point)
-    
-    full_text_summary = ''
-    for idx in summarizer.get_summary():
-      full_text_summary += texts[idx]['text'] + ' '
-    
-    summaries[t_summary] = full_text_summary
-    t_summary += 1
-    
-    runtime = time() - start
-    total_time += runtime
-  
-  texts_output_path = '../../../data/reveazy/output/texts.json'
-  dump_data(texts, texts_output_path)
-
-  summaries_output_path = '../../../data/reveazy/output/summaries.json'
-  dump_data(summaries, summaries_output_path)
-
-  print(f"Amortized runtime: {total_time / count}")
+  # dump report
+  report_path = f'../../../outputs/reports/report.json'
+  dump_data(report, report_path)
   
