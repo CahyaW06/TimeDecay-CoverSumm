@@ -38,7 +38,7 @@ def load_representations(data, product_id):
   for sentence, emb in zip(sentences, sentence_embeddings):
     representations.append([sentence, data[product_id]['created_at'], emb])
     
-  return representations
+  return representations, len(sentences)
 
 def get_summarizer(name, method, summary_length=5):
   summarizer = None
@@ -86,19 +86,21 @@ if __name__ == '__main__':
   # text segmentation
   text_id = 0
   texts = {}
-  for product_id in data.keys():
-    representations = load_representations(data, product_id)
+  total_sentences = 0
+  for product_id in tqdm(data.keys()):
+    representations, sentences_number = load_representations(data, product_id)
     
+    total_sentences += sentences_number
     for sentence, timestamp, representation in representations:
-      input_point = representation.astype(np.float32)
-      
       texts[text_id] = {
         'text': sentence,
         'timestamp': timestamp,
-        'representation': input_point.tolist()
+        'representation': representation.astype(np.float32).tolist()
       }
 
       text_id += 1
+
+  sentence_number_for_summary = round(total_sentences / len(data.keys()))
   
   # dump text segmentation
   texts_output_path = f'../../../outputs/text_segmentation/{year}/{months}.json'
@@ -112,17 +114,17 @@ if __name__ == '__main__':
     if method == 'without-decay': args.summarizer = 'coversumm' 
     else: args.summarizer = 'td_coversumm'
       
-    summarizer = get_summarizer(args.summarizer, method=method)
+    summarizer = get_summarizer(name=args.summarizer, method=method, summary_length=sentence_number_for_summary)
     
     summary_iteration = 1
     summaries = {}
 
     print(f'========= start summarization with {args.summarizer} using {method} decay method =========')
-    for text, timestamp, representation in texts.values():
+    for text in texts.values():
       review_counter += 1
       start = time()
 
-      input_point = np.array(representation, dtype=np.float32)
+      input_point = np.array(text['representation'], dtype=np.float32)
 
       # update summary
       if (args.summarizer == 'td_coversumm'):
@@ -154,6 +156,7 @@ if __name__ == '__main__':
       'decay_method': summarizer._decay_type if hasattr(summarizer, "_decay_type") else method,
       'decay_rate': summarizer._decay_rate if hasattr(summarizer, "_decay_rate") else None,
       'amortized_runtime': total_time / review_counter,
+      'sentence_number_for_summary': sentence_number_for_summary,
       'summary_id': list(summarizer.get_summary()),
       'summary_text': full_text_summary,
     }
