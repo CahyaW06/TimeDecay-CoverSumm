@@ -1,16 +1,8 @@
-import time
-import os
-import json
-import nltk
+import time, json, nltk, torch, argparse, numpy as np, sys
+
 nltk.download('punkt', quiet=True)
 nltk.download('punkt_tab', quiet=True)
 
-import torch
-import argparse
-
-import numpy as np
-
-import sys
 sys.path.append("../../")
 
 from utils.data import *
@@ -18,8 +10,10 @@ from transformers import AutoModel, AutoTokenizer
 # from utils.summary import truncate_summary, RougeEvaluator
 
 from tqdm import tqdm
+from pathlib import Path
 from algorithms.coversumm_summarizer import CoverSummOnlineSummarizer
 from algorithms.time_decay_coversumm_summarizer import TimeDecayCoverSummOnlineSummarizer
+from functions.dump_json import dump_data
 
 def load_json(filename):
   with open(filename) as file:
@@ -56,18 +50,6 @@ def get_summarizer(name, method, summary_length=3):
     summarizer = TimeDecayCoverSummOnlineSummarizer(summary_length=summary_length, decay_type=method)
   return summarizer
 
-def np_encoder(object):
-  if isinstance(object, np.generic):
-    return object.item()
-
-def dump_data(data, path='../../../data/reveazy/output/reveazy_summaries.json'):
-  directory = os.path.dirname(path)
-  if not os.path.exists(directory):
-    os.makedirs(directory)
-    
-  with open(path, 'w') as f:
-    json.dump(data, f, default=np_encoder, indent=4)
-
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument("--summarizer",
@@ -79,11 +61,12 @@ if __name__ == '__main__':
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
-                      default='../../../data/reveazy/reveazy_reviews.json',
+                      default='../../../data/raw_reviews/5.json',
                       type=str,
                       help="Path to dataset.")
 
   args = parser.parse_args()
+  data_path = Path(args.data_path)
 
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -149,11 +132,11 @@ if __name__ == '__main__':
       total_time += runtime
     
     # dump text segmentation
-    texts_output_path = '../../../data/reveazy/output/texts.json'
+    texts_output_path = f'../../../outputs/text_segmentation/{data_path.name}.json'
     dump_data(texts, texts_output_path)
 
     # dump summary
-    summaries_output_path = f'../../../outputs/{args.summarizer}/{method}/summaries.json'
+    summaries_output_path = f'../../../outputs/{args.summarizer}/{method}/{data_path.name}.json'
     dump_data(summaries, summaries_output_path)
 
     print(f"Amortized runtime: {total_time / review_counter}")
@@ -162,16 +145,15 @@ if __name__ == '__main__':
     # save report
     report[iteration] = {
       'summarizer': args.summarizer,
+      'dataset': data_path,
       'decay_method': summarizer._decay_type if hasattr(summarizer, "_decay_type") else method,
       'decay_rate': summarizer._decay_rate if hasattr(summarizer, "_decay_rate") else None,
       'amortized_runtime': total_time / review_counter,
       'summary_id': list(summarizer.get_summary()),
       'summary_text': full_text_summary,
     }
-
-    del summarizer
   
   # dump report
-  report_path = f'../../../outputs/reports/report.json'
+  report_path = f'../../../outputs/reports/report_{data_path.name}.json'
   dump_data(report, report_path)
   
