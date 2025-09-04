@@ -22,27 +22,25 @@ def load_json(filename):
 def load_representations(data, product_id):
   representations = []
   
-  for review in tqdm(data[product_id]):
-    sentences = nltk.sent_tokenize(review['review_body'])
-    if not sentences:
-      continue
+  sentences = nltk.sent_tokenize(data[product_id]['review_body'])
 
-    batch = tokenizer(sentences,
-                      padding='max_length',
-                      truncation=True,
-                      add_special_tokens=True, 
-                      max_length=512,
-                      return_tensors='pt')  # lebih rapi
-    batch = {k: v.to(device) for k,v in batch.items()}
-    output = model(**batch)
-    sentence_embeddings = output['pooler_output'].detach().cpu().numpy()
+  batch = tokenizer(sentences,
+                    padding='max_length',
+                    truncation=True,
+                    add_special_tokens=True, 
+                    max_length=512,
+                    return_tensors='pt')  # lebih rapi
+  batch = {k: v.to(device) for k,v in batch.items()}
+  output = model(**batch)
+  sentence_embeddings = output['pooler_output'].detach().cpu().numpy()
+  
+  # representations.append(output)
+  for sentence, emb in zip(sentences, sentence_embeddings):
+    representations.append([sentence, data[product_id]['created_at'], emb])
     
-    # representations.append(output)
-    for sentence, emb in zip(sentences, sentence_embeddings):
-      representations.append([sentence, review['created_at'], emb])
   return representations
 
-def get_summarizer(name, method, summary_length=3):
+def get_summarizer(name, method, summary_length=5):
   summarizer = None
   if method == 'without-decay':
     summarizer = CoverSummOnlineSummarizer(summary_length=summary_length)
@@ -61,12 +59,15 @@ if __name__ == '__main__':
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
-                      default='../../../data/raw_reviews/5.json',
+                      default='../../../data/raw_reviews/2025/5.json',
                       type=str,
                       help="Path to dataset.")
 
   args = parser.parse_args()
+  
   data_path = Path(args.data_path)
+  year = data_path.parent.name
+  months = data_path.stem
 
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -82,6 +83,28 @@ if __name__ == '__main__':
   # report
   report = {} 
 
+  # text segmentation
+  text_id = 0
+  texts = {}
+  for product_id in data.keys():
+    representations = load_representations(data, product_id)
+    
+    for sentence, timestamp, representation in representations:
+      input_point = representation.astype(np.float32)
+      
+      texts[text_id] = {
+        'text': sentence,
+        'timestamp': timestamp,
+        'representation': input_point.tolist()
+      }
+
+      text_id += 1
+  
+  # dump text segmentation
+  texts_output_path = f'../../../outputs/text_segmentation/{year}/{months}.json'
+  dump_data(texts, texts_output_path)
+
+  # summarization
   for iteration, method in enumerate(decay_method):
     total_time = 0
     review_counter = 0
@@ -91,69 +114,53 @@ if __name__ == '__main__':
       
     summarizer = get_summarizer(args.summarizer, method=method)
     
-    text_id = 0
     summary_iteration = 1
-    texts = {}
     summaries = {}
 
-    for product_id in list(data.keys()):
+    print(f'========= start summarization with {args.summarizer} using {method} decay method =========')
+    for text, timestamp, representation in texts.values():
       review_counter += 1
       start = time()
 
-      representations = load_representations(data, product_id)
-      
-      for sentence, timestamp, representation in representations:
-        input_point = representation.astype(np.float32)
-        
-        texts[text_id] = {
-          'text': sentence,
-          'timestamp': timestamp,
-        }
+      input_point = np.array(representation, dtype=np.float32)
 
-        text_id += 1
-
-        # update summary
-        if (args.summarizer == 'td_coversumm'):
-          last_summary = summarizer.update_summary(input_point, timestamp)
-        else:
-          last_summary = summarizer.update_summary(input_point)
-      
-      # get summary text
-      full_text_summary = ''
-      for idx in summarizer.get_summary():
-        full_text_summary += texts[idx]['text'] + ' '
-      full_text_summary.strip()
+      # update summary
+      if (args.summarizer == 'td_coversumm'):
+        last_summary = summarizer.update_summary(input_point, timestamp)
+      else:
+        last_summary = summarizer.update_summary(input_point)
       
       # save summary per iteration
-      summaries[summary_iteration] = full_text_summary
+      summaries[summary_iteration] = summarizer.get_summary()
       summary_iteration += 1
       
       runtime = time() - start
       total_time += runtime
     
-    # dump text segmentation
-    texts_output_path = f'../../../outputs/text_segmentation/{data_path.name}.json'
-    dump_data(texts, texts_output_path)
+    # get summary text
+    full_text_summary = ''
+    for idx in summarizer.get_summary():
+      full_text_summary += texts[idx]['text'] + ' '
+    full_text_summary.strip()
 
     # dump summary
-    summaries_output_path = f'../../../outputs/{args.summarizer}/{method}/{data_path.name}.json'
+    summaries_output_path = f'../../../outputs/summaries/{args.summarizer}/{method}/{year}/{months}.json'
     dump_data(summaries, summaries_output_path)
-
-    print(f"Amortized runtime: {total_time / review_counter}")
-    print(f"Text Summary ID: {summarizer.get_summary()}")
 
     # save report
     report[iteration] = {
       'summarizer': args.summarizer,
-      'dataset': data_path,
+      'dataset': args.data_path,
       'decay_method': summarizer._decay_type if hasattr(summarizer, "_decay_type") else method,
       'decay_rate': summarizer._decay_rate if hasattr(summarizer, "_decay_rate") else None,
       'amortized_runtime': total_time / review_counter,
       'summary_id': list(summarizer.get_summary()),
       'summary_text': full_text_summary,
     }
+
+    print(f'========= end =========')
   
   # dump report
-  report_path = f'../../../outputs/reports/report_{data_path.name}.json'
+  report_path = f'../../../outputs/reports/{year}/{months}.json'
   dump_data(report, report_path)
   
