@@ -11,7 +11,7 @@ from algorithms.naivesgt_summarizer import SGTreeOnlineSummarizer
 
 
 class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
-    def __init__(self, dim=100, min_capacity=100, alpha = 1e-1, summary_length=5, decay_rate=0.5, decay_type='exp'):
+    def __init__(self, dim=100, min_capacity=100, alpha = 1e-1, summary_length=5, decay_rate=0.5, decay_type='power'):
         # TODO: search what min_capacity and alpha used for
         super().__init__(summary_length=summary_length)
         self._current_neighbours = None
@@ -25,6 +25,8 @@ class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
         self._last_mean = None
         self._decay_rate = decay_rate
         self._decay_type = decay_type
+        self._total_decay_weight = 0
+        self._weigth_list = []
 
     def _get_decay_weight(self, date):
         date_diff_in_days = self._get_diff_date(date)
@@ -65,13 +67,20 @@ class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
     def update_summary(self, input_point, date):
         self._size += 1
         decay_weight = self._get_decay_weight(date)
+        self._weigth_list.append(decay_weight)
 
         if self._size <= self._summary_length + 1:
             self._points.append(input_point)
         
+        # update mean
+        # self._update_mean(input_point)
+
         # update mean with time decay
-        self._update_mean(input_point)
-        self._current_mean = self._current_mean * decay_weight
+        self._current_mean = np.mean(
+            self._points, axis=0) if self._current_mean is None else (
+                (self._current_mean * self._total_decay_weight) + (input_point * decay_weight)) / (self._total_decay_weight + decay_weight)
+        
+        self._total_decay_weight += decay_weight
         
         if self._size <= self._summary_length:
             return self._output_all()

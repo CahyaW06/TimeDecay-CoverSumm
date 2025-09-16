@@ -29,7 +29,7 @@ def load_representations(data, product_id):
                     truncation=True,
                     add_special_tokens=True, 
                     max_length=512,
-                    return_tensors='pt')  # lebih rapi
+                    return_tensors='pt')
   batch = {k: v.to(device) for k,v in batch.items()}
   output = model(**batch)
   sentence_embeddings = output['pooler_output'].detach().cpu().numpy()
@@ -40,12 +40,12 @@ def load_representations(data, product_id):
     
   return representations, len(sentences)
 
-def get_summarizer(name, method, summary_length=5):
+def get_summarizer(name, method, summary_length=10):
   summarizer = None
   if method == 'without-decay':
     summarizer = CoverSummOnlineSummarizer(summary_length=summary_length)
   else: 
-    summarizer = TimeDecayCoverSummOnlineSummarizer(summary_length=summary_length, decay_type=method)
+    summarizer = TimeDecayCoverSummOnlineSummarizer(summary_length=summary_length, decay_type=method, decay_rate=0.75)
   return summarizer
 
 if __name__ == '__main__':
@@ -55,7 +55,7 @@ if __name__ == '__main__':
                       type=str,
                       help="Name of Summarizer.")
   parser.add_argument("--model_name",
-                      default="fathan/indojave-codemixed-indobert-base",
+                      default="fathan/ijelid-ft-indojave-indobertweet",
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
@@ -64,6 +64,8 @@ if __name__ == '__main__':
                       help="Path to dataset.")
 
   args = parser.parse_args()
+
+  print(f'start summarization for {args.data_path}')
   
   data_path = Path(args.data_path)
   year = data_path.parent.name
@@ -78,7 +80,7 @@ if __name__ == '__main__':
   data = load_json(args.data_path)
 
   # decay method
-  decay_method = ['power', 'exp', 'linear', 'without-decay']
+  decay_method = ['power', 'exp', 'without-decay']
 
   # report
   report = {} 
@@ -100,7 +102,8 @@ if __name__ == '__main__':
 
       text_id += 1
 
-  sentence_number_for_summary = round(total_sentences / len(data.keys()))
+  # sentence_number_for_summary = round(total_sentences / len(data.keys()))
+  sentence_number_for_summary = 5
   
   # dump text segmentation
   texts_output_path = f'../../../outputs/text_segmentation/{year}/{months}.json'
@@ -119,7 +122,7 @@ if __name__ == '__main__':
     summary_iteration = 1
     summaries = {}
 
-    print(f'========= start summarization with {args.summarizer} using {method} decay method =========')
+    print(f'========= {method} {args.summarizer} =========')
     for text in texts.values():
       review_counter += 1
       start = time()
@@ -128,7 +131,7 @@ if __name__ == '__main__':
 
       # update summary
       if (args.summarizer == 'td_coversumm'):
-        last_summary = summarizer.update_summary(input_point, timestamp)
+        last_summary = summarizer.update_summary(input_point, text['timestamp'])
       else:
         last_summary = summarizer.update_summary(input_point)
       
@@ -159,9 +162,8 @@ if __name__ == '__main__':
       'sentence_number_for_summary': sentence_number_for_summary,
       'summary_id': list(summarizer.get_summary()),
       'summary_text': full_text_summary,
+      # 'weights': summarizer._weigth_list if hasattr(summarizer, "_weigth_list") else None
     }
-
-    print(f'========= end =========')
   
   # dump report
   report_path = f'../../../outputs/reports/{year}/{months}.json'
