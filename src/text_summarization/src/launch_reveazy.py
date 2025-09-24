@@ -24,25 +24,29 @@ def load_representations(data, product_id):
   
   sentences = nltk.sent_tokenize(data[product_id]['review_body'])
 
-  batch = tokenizer(sentences,
-                    padding='max_length',
-                    truncation=True,
-                    add_special_tokens=True, 
-                    max_length=512,
-                    return_tensors='pt')
-  batch = {k: v.to(device) for k,v in batch.items()}
-  output = model(**batch)
-  sentence_embeddings = output['pooler_output'].detach().cpu().numpy()
-  
-  # representations.append(output)
-  for sentence, emb in zip(sentences, sentence_embeddings):
+  for sentence in sentences:
+    # tokenize per kalimat
+    inputs = tokenizer(sentence,
+                        padding='max_length',
+                        truncation=True,
+                        add_special_tokens=True,
+                        max_length=512,
+                        return_tensors='pt')
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    
+    # forward pass
+    with torch.no_grad():
+        output = model(**inputs)
+        emb = output['pooler_output'].squeeze().detach().cpu().numpy()
+    
+    # simpan: [kalimat, timestamp, embedding]
     representations.append([sentence, data[product_id]['created_at'], emb])
     
   return representations, len(sentences)
 
 def get_summarizer(name, method, summary_length=10):
   summarizer = None
-  if method == 'without-decay':
+  if method == 'none':
     summarizer = CoverSummOnlineSummarizer(summary_length=summary_length)
   else: 
     summarizer = TimeDecayCoverSummOnlineSummarizer(summary_length=summary_length, decay_type=method, decay_rate=0.75)
@@ -55,7 +59,7 @@ if __name__ == '__main__':
                       type=str,
                       help="Name of Summarizer.")
   parser.add_argument("--model_name",
-                      default="fathan/ijelid-ft-indojave-indobertweet",
+                      default="fathan/indojave-codemixed-bert-base",
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
@@ -80,7 +84,7 @@ if __name__ == '__main__':
   data = load_json(args.data_path)
 
   # decay method
-  decay_method = ['power', 'exp', 'without-decay']
+  decay_method = ['power', 'exp', 'linear', 'none']
 
   # report
   report = {} 
@@ -103,7 +107,7 @@ if __name__ == '__main__':
       text_id += 1
 
   # sentence_number_for_summary = round(total_sentences / len(data.keys()))
-  sentence_number_for_summary = 5
+  sentence_number_for_summary = 20
   
   # dump text segmentation
   texts_output_path = f'../../../outputs/text_segmentation/{year}/{months}.json'
@@ -114,7 +118,7 @@ if __name__ == '__main__':
     total_time = 0
     review_counter = 0
 
-    if method == 'without-decay': args.summarizer = 'coversumm' 
+    if method == 'none': args.summarizer = 'coversumm' 
     else: args.summarizer = 'td_coversumm'
       
     summarizer = get_summarizer(name=args.summarizer, method=method, summary_length=sentence_number_for_summary)

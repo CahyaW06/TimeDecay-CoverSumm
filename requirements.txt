@@ -9,3 +9,6 @@ sentencepiece==0.2.0
 sshtunnel==0.4.0
 pymysql==1.1.1
 python-dotenv==1.0.1
+pandas==2.0.3
+matplotlib==3.7.5
+openpyxl==3.1.5

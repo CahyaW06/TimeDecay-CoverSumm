@@ -1,4 +1,4 @@
-import pymysql, os, argparse, re
+import pymysql, os, argparse, re, pandas as pd
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -14,7 +14,13 @@ DB_PASSWORD=os.environ.get('DB_PASSWORD')
 DB_PORT=os.environ.get('DB_PORT')
 
 def clean_duplicate_punc(text: str):
-    return re.sub(r'([!?.,:;])\1+', r'\1', text)
+    # hapus duplikasi
+    text = re.sub(r'(?<!\d)([!?.,:;])\1+(?!\d)', r'\1', text)
+
+    # tambah spasi
+    text = re.sub(r'([!?.,:;])(?!\s|\d)', r'\1 ', text)
+    
+    return text
 
 def replace_newline_with_dot(text: str):
     return text.replace('\n', '.')
@@ -44,8 +50,9 @@ def remove_non_ascii(text: str):
 def preprocess(text: str):
     text = remove_emoji(text)
     text = remove_non_ascii(text)
-    text = clean_duplicate_punc(text)
     text = replace_newline_with_dot(text)
+    text = clean_duplicate_punc(text)
+    
     return text
 
 def get_reviews_from_database(months: list, year: str):
@@ -88,8 +95,23 @@ if __name__ == '__main__':
             'review_body': review_body,
             'created_at': item[1].isoformat()
         }
+    
+    data = [
+        {
+            "ulasan": v["review_body"],
+            "waktu": v["created_at"]
+        }
+        for v in review_dict.values()
+    ]
 
+    df = pd.DataFrame(data)
+
+    # # Export excel
+    # excel_path = f'../data/raw_reviews/{year}/{months_str}.xlsx'
+    # df.to_excel(excel_path, index=False)
+    # print(f"Data saved to {excel_path}")
+
+    # Export json
     data_path = f'../data/raw_reviews/{year}/{months_str}.json'
     dump_data(review_dict, data_path)
-
     print(f"Data saved to {data_path}")
