@@ -14,10 +14,13 @@ from pathlib import Path
 from algorithms.coversumm_summarizer import CoverSummOnlineSummarizer
 from algorithms.time_decay_coversumm_summarizer import TimeDecayCoverSummOnlineSummarizer
 from functions.dump_json import dump_data
+from functions.general import load_json
 
-def load_json(filename):
-  with open(filename) as file:
-    return json.load(file)
+def mean_pool(last_hidden_state, attention_mask):
+    mask = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
+    summed = (last_hidden_state * mask).sum(dim=1)
+    counts = mask.sum(dim=1).clamp(min=1e-9)
+    return summed / counts
 
 def load_representations(data, product_id):
   representations = []
@@ -37,7 +40,8 @@ def load_representations(data, product_id):
     # forward pass
     with torch.no_grad():
         output = model(**inputs)
-        emb = output['pooler_output'].squeeze().detach().cpu().numpy()
+        sent_vec = mean_pool(output.last_hidden_state, inputs['attention_mask'])
+        emb = sent_vec.squeeze().cpu().numpy()
     
     # simpan: [kalimat, timestamp, embedding]
     representations.append([sentence, data[product_id]['created_at'], emb])
@@ -63,7 +67,7 @@ if __name__ == '__main__':
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
-                      default='../../../data/raw_reviews/2025/5.json',
+                      default='../../../data/raw_reviews/2025/6.json',
                       type=str,
                       help="Path to dataset.")
 
@@ -78,13 +82,13 @@ if __name__ == '__main__':
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
   tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-  model = AutoModel.from_pretrained(args.model_name)
-  model.to(device)
+  model = AutoModel.from_pretrained(args.model_name, add_pooling_layer=False).to(device)
+  model.eval()
 
   data = load_json(args.data_path)
 
   # decay method
-  decay_method = ['power', 'exp', 'linear', 'none']
+  decay_method = ['exp', 'none']
 
   # report
   report = {} 
@@ -107,7 +111,7 @@ if __name__ == '__main__':
       text_id += 1
 
   # sentence_number_for_summary = round(total_sentences / len(data.keys()))
-  sentence_number_for_summary = 20
+  sentence_number_for_summary = 10
   
   # dump text segmentation
   texts_output_path = f'../../../outputs/text_segmentation/{year}/{months}.json'
@@ -166,7 +170,6 @@ if __name__ == '__main__':
       'sentence_number_for_summary': sentence_number_for_summary,
       'summary_id': list(summarizer.get_summary()),
       'summary_text': full_text_summary,
-      # 'weights': summarizer._weigth_list if hasattr(summarizer, "_weigth_list") else None
     }
   
   # dump report
