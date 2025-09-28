@@ -1,4 +1,4 @@
-import time, json, nltk, torch, argparse, numpy as np, sys
+import time, json, nltk, torch, argparse, numpy as np, sys, pandas as pd
 
 nltk.download('punkt', quiet=True)
 nltk.download('punkt_tab', quiet=True)
@@ -67,7 +67,7 @@ if __name__ == '__main__':
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
-                      default='../../../data/raw_reviews/2025/6.json',
+                      default='../../../data/raw_reviews/2025/6,7,8.json',
                       type=str,
                       help="Path to dataset.")
 
@@ -94,21 +94,24 @@ if __name__ == '__main__':
   report = {} 
 
   # text segmentation
-  text_id = 0
-  texts = {}
-  total_sentences = 0
-  for product_id in tqdm(data.keys()):
-    representations, sentences_number = load_representations(data, product_id)
-    
-    total_sentences += sentences_number
-    for sentence, timestamp, representation in representations:
-      texts[text_id] = {
-        'text': sentence,
-        'timestamp': timestamp,
-        'representation': representation.astype(np.float32).tolist()
-      }
+  if (Path(f'../../../outputs/text_segmentation/{year}/{months}.json').exists()):
+    texts = load_json(f'../../../outputs/text_segmentation/{year}/{months}.json')
+  else:
+    text_id = 0
+    texts = {}
+    total_sentences = 0
+    for product_id in tqdm(data.keys()):
+      representations, sentences_number = load_representations(data, product_id)
+      
+      total_sentences += sentences_number
+      for sentence, timestamp, representation in representations:
+        texts[text_id] = {
+          'text': sentence,
+          'timestamp': timestamp,
+          'representation': representation.astype(np.float32).tolist()
+        }
 
-      text_id += 1
+        text_id += 1
 
   # sentence_number_for_summary = round(total_sentences / len(data.keys()))
   sentence_number_for_summary = 10
@@ -131,7 +134,7 @@ if __name__ == '__main__':
     summaries = {}
 
     print(f'========= {method} {args.summarizer} =========')
-    for text in texts.values():
+    for text_id, text in texts.items():
       review_counter += 1
       start = time()
 
@@ -153,7 +156,7 @@ if __name__ == '__main__':
     # get summary text
     full_text_summary = ''
     for idx in summarizer.get_summary():
-      full_text_summary += texts[idx]['text'] + ' '
+      full_text_summary += texts[f'{idx}']['text'] + ' '
     full_text_summary.strip()
 
     # dump summary

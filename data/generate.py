@@ -107,9 +107,9 @@ if __name__ == '__main__':
     df = pd.DataFrame(data)
 
     # # Export excel
-    # excel_path = f'../data/raw_reviews/{year}/{months_str}.xlsx'
-    # df.to_excel(excel_path, index=False)
-    # print(f"Data saved to {excel_path}")
+    excel_path = f'../data/raw_reviews/{year}/{months_str}.xlsx'
+    df.to_excel(excel_path, index=False)
+    print(f"Data saved to {excel_path}")
 
     # Export json
     data_path = f'../data/raw_reviews/{year}/{months_str}.json'
