@@ -48,12 +48,12 @@ def load_representations(data, product_id):
     
   return representations, len(sentences)
 
-def get_summarizer(name, method, summary_length=10):
+def get_summarizer(name, method, summary_length=10, decay_rate=None):
   summarizer = None
   if method == 'none':
-    summarizer = CoverSummOnlineSummarizer(summary_length=summary_length)
+    summarizer = CoverSummOnlineSummarizer(dim=768, summary_length=summary_length)
   else: 
-    summarizer = TimeDecayCoverSummOnlineSummarizer(summary_length=summary_length, decay_type=method, decay_rate=0.75)
+    summarizer = TimeDecayCoverSummOnlineSummarizer(dim=768, summary_length=summary_length, decay_type=method, decay_rate=decay_rate)
   return summarizer
 
 if __name__ == '__main__':
@@ -88,7 +88,12 @@ if __name__ == '__main__':
   data = load_json(args.data_path)
 
   # decay method
-  decay_method = ['exp', 'none']
+  decay_method = [
+    ['exp', 0.55],
+    ['exp', 0.6],
+    ['exp', 0.65],
+    ['none', None]
+  ]
 
   # report
   report = {} 
@@ -125,10 +130,11 @@ if __name__ == '__main__':
     total_time = 0
     review_counter = 0
 
-    if method == 'none': args.summarizer = 'coversumm' 
-    else: args.summarizer = 'td_coversumm'
+    if method[0] == 'none': args.summarizer = 'coversumm' 
+    else: args.summarizer = f'td_coversumm - {method[1]} decay rate'
       
-    summarizer = get_summarizer(name=args.summarizer, method=method, summary_length=sentence_number_for_summary)
+    summarizer = get_summarizer(name=args.summarizer, method=method[0], summary_length=sentence_number_for_summary, decay_rate=method[1] if method[0] != 'none' else None)
+    print(summarizer.__class__.__name__)
     
     summary_iteration = 1
     summaries = {}
@@ -141,10 +147,10 @@ if __name__ == '__main__':
       input_point = np.array(text['representation'], dtype=np.float32)
 
       # update summary
-      if (args.summarizer == 'td_coversumm'):
-        last_summary = summarizer.update_summary(input_point, text['timestamp'])
-      else:
+      if (args.summarizer == 'coversumm'):
         last_summary = summarizer.update_summary(input_point)
+      else:
+        last_summary = summarizer.update_summary(input_point, text['timestamp'], text_id)
       
       # save summary per iteration
       summaries[summary_iteration] = summarizer.get_summary()
