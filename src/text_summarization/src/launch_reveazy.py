@@ -89,9 +89,7 @@ if __name__ == '__main__':
 
   # decay method
   decay_method = [
-    ['exp', 0.55],
-    ['exp', 0.6],
-    ['exp', 0.65],
+    ['exp', 0.5],
     ['none', None]
   ]
 
@@ -162,8 +160,7 @@ if __name__ == '__main__':
     # get summary text
     full_text_summary = ''
     for idx in summarizer.get_summary():
-      full_text_summary += texts[f'{idx}']['text'] + ' '
-    full_text_summary.strip()
+      full_text_summary += texts[f'{idx}']['text'].strip() + ('. ' if texts[f'{idx}']['text'][-1] != '.' else '')
 
     # dump summary
     summaries_output_path = f'../../../outputs/summaries/{args.summarizer}/{method}/{year}/{months}.json'

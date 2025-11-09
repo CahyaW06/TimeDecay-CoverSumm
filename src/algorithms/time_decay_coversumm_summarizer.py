@@ -7,10 +7,11 @@ import graphgrove as gg
 
 from copy import deepcopy
 from graphgrove.sgtree import NNS_L2 as SGTree_NNS_L2
-from algorithms.naivesgt_summarizer import SGTreeOnlineSummarizer
+from algorithms.summarizer import OnlineSummarizer
 
+import faiss
 
-class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
+class TimeDecayCoverSummOnlineSummarizer(OnlineSummarizer):
     def __init__(self, dim=768, min_capacity=100, alpha = 1e-1, summary_length=5, decay_rate=0.5, decay_type='exp'):
         super().__init__(summary_length=summary_length)
         self._current_neighbours = None
@@ -27,16 +28,25 @@ class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
         self._total_decay_weight = 0
         self._weigth_list = []
 
+        base_index = faiss.IndexFlatL2(dim)
+        self._index = faiss.IndexIDMap(base_index)
+
     def _get_decay_weight(self, date):
         date_diff_in_days = self._get_diff_date(date)
+        epsilon = 1e-12
+
+        if date_diff_in_days == 0:
+            return 1
 
         if self._decay_type == 'power':
-            return math.pow(date_diff_in_days, -self._decay_rate)
+            weight = math.pow(date_diff_in_days, -self._decay_rate)
         elif self._decay_type == 'exp':
-            return math.exp(-self._decay_rate * date_diff_in_days)
+            weight = math.exp(-self._decay_rate * date_diff_in_days)
         elif self._decay_type == 'linear':
-            return 1 / (1 + (self._decay_rate * date_diff_in_days))
-        return math.exp(-self._decay_rate * date_diff_in_days)
+            weight = 1 / (1 + (self._decay_rate * date_diff_in_days))
+        else:
+            weight = math.exp(-self._decay_rate * date_diff_in_days)
+        return max(weight, epsilon)
         
     def _get_diff_date(self, review_date):
         current_date = datetime.now()
@@ -44,18 +54,25 @@ class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
         return (current_date - date).days
 
     def _return_knn(self, query):
-        idx, dist = self._cover_tree.kNearestNeighbours(query.reshape(1, -1),
-                                                        k=self._summary_length)
-        self._max_dist = max(dist[0])
-        self._current_neighbours_idx = idx[0]
+        query_np = query.reshape(1, -1).astype(np.float32)
+        D, I = self._index.search(query_np, k=self._summary_length)
+
+        true_distances = np.sqrt(D[0])
+        self._max_dist = max(true_distances)
+        self._current_neighbours_idx = I[0]
         return self._current_neighbours_idx
 
     def _range_query(self, query, radius):
-        idx, dist, neighbours = self._cover_tree.RangeSearch(
-            query.reshape(1, -1), r=radius, return_points=True)
-        self._current_neighbours = neighbours[0]
-        self._current_neighbours_idx = idx[0]
-        self._max_dist = max(dist[0])
+        query_np = query.reshape(1, -1).astype(np.float32)
+        radius_squared = radius**2
+        lims, D, I = self._index.range_search(query_np, radius_squared)
+        ids_found = I
+        dists_found = np.sqrt(D)
+        self._current_neighbours = np.array([self._points[i] for i in ids_found])
+        self._current_neighbours_idx = ids_found
+
+        if len(dists_found) > 0: self._max_dist = max(dists_found)
+        else: self._max_dist = 1e6
 
     def _get_summary(self, query):
         distances = np.linalg.norm(self._current_neighbours - query, axis=-1)
@@ -68,7 +85,7 @@ class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
         decay_weight = self._get_decay_weight(date)
         self._weigth_list.append(decay_weight)
 
-        if self._size <= self._summary_length + 1: self._points.append(input_point)
+        self._points.append(input_point)
         if self._total_decay_weight == 0: self._total_decay_weight = decay_weight
 
         # update mean with time decay
@@ -81,14 +98,19 @@ class TimeDecayCoverSummOnlineSummarizer(SGTreeOnlineSummarizer):
         if self._size <= self._summary_length:
             return self._output_all()
 
-        if self._cover_tree is None:
-            self._cover_tree = SGTree_NNS_L2.from_matrix(np.array(
-                self._points))
+        current_id = np.array([self._size - 1]).astype(np.int64)
+        current_point_np = input_point.reshape(1, -1).astype(np.float32)
+
+        if self._index.ntotal == 0:
+            all_points_np = np.array(self._points).astype(np.float32)
+            all_ids = np.arange(self._size).astype(np.int64)
+            self._index.add_with_ids(all_points_np, all_ids)
+
             self._last_mean = self._current_mean
             self._current_neighbours = deepcopy(self._points)
             self._current_neighbours_idx = list(range(self._size))
         else:
-            self._cover_tree.insert(input_point[None, :])
+            self._index.add_with_ids(current_point_np, current_id)
 
         if self._size <= self._min_capacity:
             self._summary = self._return_knn(self._current_mean)
