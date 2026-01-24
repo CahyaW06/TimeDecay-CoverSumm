@@ -5,9 +5,7 @@ nltk.download('punkt_tab', quiet=True)
 
 sys.path.append("../../")
 
-from utils.data import *
 from transformers import AutoModel, AutoTokenizer
-# from utils.summary import truncate_summary, RougeEvaluator
 
 from tqdm import tqdm
 from pathlib import Path
@@ -67,7 +65,7 @@ if __name__ == '__main__':
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
-                      default='../../../data/raw_reviews/2025/6,7,8.json',
+                      default='../../../data/raw_reviews/2025/6.json',
                       type=str,
                       help="Path to dataset.")
 
@@ -89,7 +87,15 @@ if __name__ == '__main__':
 
   # decay method
   decay_method = [
+    ['exp', 0.1],
+    ['exp', 0.2],
+    ['exp', 0.3],
+    ['exp', 0.4],
     ['exp', 0.5],
+    ['exp', 0.6],
+    ['exp', 0.7],
+    ['exp', 0.8],
+    ['exp', 0.9],
     ['none', None]
   ]
 
@@ -116,12 +122,12 @@ if __name__ == '__main__':
 
         text_id += 1
 
+    # dump text segmentation
+    texts_output_path = f'../../../outputs/text_segmentation/{year}/{months}.json'
+    dump_data(texts, texts_output_path)
+
   # sentence_number_for_summary = round(total_sentences / len(data.keys()))
   sentence_number_for_summary = 10
-  
-  # dump text segmentation
-  texts_output_path = f'../../../outputs/text_segmentation/{year}/{months}.json'
-  dump_data(texts, texts_output_path)
 
   # summarization
   for iteration, method in enumerate(decay_method):
@@ -137,30 +143,33 @@ if __name__ == '__main__':
     summary_iteration = 1
     summaries = {}
 
-    print(f'========= {method} {args.summarizer} =========')
-    for text_id, text in texts.items():
-      review_counter += 1
-      start = time()
+    try:
+      print(f'========= {method} {args.summarizer} =========')
+      for text_id, text in texts.items():
+        review_counter += 1
+        start = time.time()
 
-      input_point = np.array(text['representation'], dtype=np.float32)
+        input_point = np.array(text['representation'], dtype=np.float32)
 
-      # update summary
-      if (args.summarizer == 'coversumm'):
-        last_summary = summarizer.update_summary(input_point)
-      else:
-        last_summary = summarizer.update_summary(input_point, text['timestamp'], text_id)
-      
-      # save summary per iteration
-      summaries[summary_iteration] = summarizer.get_summary()
-      summary_iteration += 1
-      
-      runtime = time() - start
-      total_time += runtime
+        # update summary
+        if (args.summarizer == 'coversumm'):
+          last_summary = summarizer.update_summary(input_point)
+        else:
+          last_summary = summarizer.update_summary(input_point, text['timestamp'], text_id)
+        
+        # save summary per iteration
+        summaries[summary_iteration] = summarizer.get_summary()
+        summary_iteration += 1
+        
+        runtime = time.time() - start
+        total_time += runtime
+    except Exception as e:
+      print(f"Error: {e}")
     
     # get summary text
     full_text_summary = ''
     for idx in summarizer.get_summary():
-      full_text_summary += texts[f'{idx}']['text'].strip() + ('. ' if texts[f'{idx}']['text'][-1] != '.' else '')
+      full_text_summary += texts[f'{idx}']['text'].strip()
 
     # dump summary
     summaries_output_path = f'../../../outputs/summaries/{args.summarizer}/{method}/{year}/{months}.json'
