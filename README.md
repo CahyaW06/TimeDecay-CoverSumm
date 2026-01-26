@@ -1,7 +1,5 @@
 # EXTRACTIVE OPINION SUMMARIZATION USING COVERSUMM WITH TIME-DECAY WEIGHTING
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green``.svg)](https://opensource.org/licenses/MIT)
-
 We present the development of existing paper:
 
 > [**Incremental Extractive Opinion Summarization Using Cover Trees**](https://arxiv.org/pdf/2401.08047),<br/>
