@@ -65,7 +65,7 @@ if __name__ == '__main__':
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
-                      default='../../../data/raw_reviews/2025/6.json',
+                      default='../../../data/raw_reviews/2025/6,7,8.json',
                       type=str,
                       help="Path to dataset.")
 
@@ -90,9 +90,9 @@ if __name__ == '__main__':
     ['exp', 0.1],
     ['exp', 0.2],
     ['exp', 0.3],
-    ['exp', 0.4],
+    ['exp', 0.55],
     ['exp', 0.5],
-    ['exp', 0.6],
+    ['exp', 0.65],
     ['exp', 0.7],
     ['exp', 0.8],
     ['exp', 0.9],
@@ -186,6 +186,8 @@ if __name__ == '__main__':
       'summary_id': list(summarizer.get_summary()),
       'summary_text': full_text_summary,
     }
+
+    del summarizer
   
   # dump report
   report_path = f'../../../outputs/reports/{year}/{months}.json'
