@@ -65,7 +65,7 @@ if __name__ == '__main__':
                       type=str,
                       help="BERT model name.")
   parser.add_argument("--data_path",
-                      default='../../../data/raw_reviews/2025/6,7,8.json',
+                      default='../../../data/raw_reviews/2025/6.json',
                       type=str,
                       help="Path to dataset.")
 
@@ -169,7 +169,7 @@ if __name__ == '__main__':
     # get summary text
     full_text_summary = ''
     for idx in summarizer.get_summary():
-      full_text_summary += texts[f'{idx}']['text'].strip()
+      full_text_summary += texts[f'{idx}']['text'].strip() + '. '
 
     # dump summary
     summaries_output_path = f'../../../outputs/summaries/{args.summarizer}/{method}/{year}/{months}.json'
